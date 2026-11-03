@@ -42,13 +42,12 @@ class StateController(Controller):
         self._freq = config.env.freq
 
         # Same waypoints as in the attitude controller. Determined by trial and error.
-        self._t_total = 12  # s
+        self._t_total = 9 # s
         self._start_pos = obs["pos"]
             
         gate_pos = obs["gates_pos"]
         obstacle_pos = obs["obstacles_pos"]
-        obstacle_avoid_pos = self._get_obstacle_avoid_pos(obstacle_pos)
-        self._waypoints = self._get_waypoints(gate_pos, obstacle_avoid_pos)
+        self._waypoints = self._get_waypoints(gate_pos, obstacle_pos)
         t = np.linspace(0, self._t_total, len(self._waypoints))
         self._des_pos_spline = CubicSpline(t, self._waypoints)
 
@@ -75,8 +74,7 @@ class StateController(Controller):
           
         gate_pos = obs["gates_pos"]    
         obstacle_pos = obs["obstacles_pos"]
-        obstacle_avoid_pos = self._get_obstacle_avoid_pos(obstacle_pos)
-        self._waypoints = self._get_waypoints(gate_pos, obstacle_avoid_pos)
+        self._waypoints = self._get_waypoints(gate_pos, obstacle_pos)
         t_vec = np.linspace(0, self._t_total, len(self._waypoints))
         self._des_pos_spline = CubicSpline(t_vec, self._waypoints)
 
@@ -117,28 +115,34 @@ class StateController(Controller):
         trajectory = self._des_pos_spline(np.linspace(0, self._t_total, 100))
         draw_line(sim, trajectory, rgba=(0.0, 1.0, 0.0, 1.0))
     
-    _support_points = np.array(
-        [
-            [0.5, 0.75, 1.2],
-            [-0.5, -0.05, 0.7],
-            [0.5, 1.25, 1.2],
-        ]
-    )  
     
-    def _get_obstacle_avoid_pos(self, obstacles_pos):
+    def _get_support_points(self, gate_pos: NDArray[np.floating], obstacle_pos: NDArray[np.floating]) -> NDArray[np.floating]:
         return np.array(
             [
-                [obstacles_pos[0][0], obstacles_pos[0][1]-0.2, 0.7],
+                [gate_pos[1][0]-0.4, gate_pos[1][1]+0.1, gate_pos[1][2]-0.2],
+                [gate_pos[0][0]-0.3, gate_pos[0][1]+0.2, gate_pos[0][2]],
+                [gate_pos[2][0]+0.9, gate_pos[2][1]+0.3, gate_pos[2][2]-0.3],
+                [gate_pos[1][0]-0.5, gate_pos[1][1]+0.5, gate_pos[1][2]],
+            ]
+        )
+    
+    def _get_obstacle_avoid_pos(self, obstacles_pos: NDArray[np.floating]) -> NDArray[np.floating]:
+        return np.array(
+            [
+                [obstacles_pos[0][0], obstacles_pos[0][1]-0.2, 0.6],
                 [obstacles_pos[1][0]+0.25, obstacles_pos[1][1]-0.3, 1],
-                [obstacles_pos[2][0], obstacles_pos[2][1]+0.35, 1.1],
+                [obstacles_pos[2][0]-0.2, obstacles_pos[2][1]+0.35, 1.1],
                 [obstacles_pos[3][0]+0.1 , obstacles_pos[3][1]+0.3, 1.15],
                 [obstacles_pos[1][0]+0.25, obstacles_pos[1][1]-0.3, 1.2],
             ]
         )
     
-    def _get_waypoints(self, gate_pos: NDArray[np.floating], obstacle_avoid_pos: NDArray[np.floating]) -> NDArray[np.floating]:
+    def _get_waypoints(self, gate_pos: NDArray[np.floating], obstacle_pos: NDArray[np.floating]) -> NDArray[np.floating]:
         gate_pos_copy = np.array(gate_pos)
-        gate_pos_copy[:, 2] -= 0.1
+        gate_pos_copy[:, 2] -= 0.2
+        
+        obstacle_avoid_pos = self._get_obstacle_avoid_pos(obstacle_pos)
+        support_points = self._get_support_points(gate_pos, obstacle_pos)
         
         waypoints = np.array(
             [
@@ -147,15 +151,16 @@ class StateController(Controller):
                 gate_pos_copy[0],   # Gate 0 [0.5, 0.25, 0.7]
                 obstacle_avoid_pos[1],
                 gate_pos_copy[1],  # Gate 1 [1.05, 0.75, 1.2]
-                self._support_points[0],
-                self._support_points[1],
+                support_points[0],
+                support_points[1],
+                support_points[2],
                 gate_pos_copy[2],  # Gate 2 [-1.0, -0.25, 0.7]
                 obstacle_avoid_pos[2],
                 obstacle_avoid_pos[3],
                 gate_pos_copy[3],  # Gate 3 [0.0, -0.75, 1.2]
                 obstacle_avoid_pos[4],
                 gate_pos_copy[1],  # Gate 1 [1.05, 0.75, 1.2]
-                self._support_points[2],
+                support_points[3],
             ]
         )
         return waypoints
