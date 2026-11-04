@@ -110,8 +110,6 @@ class StateController(Controller):
         setpoint = self._des_pos_spline(self._tick / self._freq).reshape(1, -1)
         draw_points(sim, setpoint, rgba=(1.0, 0.0, 0.0, 1.0), size=0.02)
         draw_points(sim, self._waypoints, rgba=(0.0, 1.0, 0.0, 1.0), size=0.02)
-        # draw_points(sim, self._support_points, rgba=(0.0, 1.0, 0.0, 1.0), size=0.02)
-        # draw_points(sim, self._obstacle_avoid_pos, rgba=(0.0, 0.0, 1.0, 1.0), size=0.02)
         trajectory = self._des_pos_spline(np.linspace(0, self._t_total, 100))
         draw_line(sim, trajectory, rgba=(0.0, 1.0, 0.0, 1.0))
     
@@ -120,7 +118,7 @@ class StateController(Controller):
         return np.array(
             [
                 [gate_pos[1][0]-0.4, gate_pos[1][1]+0.1, gate_pos[1][2]-0.2],
-                [gate_pos[0][0]-0.3, gate_pos[0][1]+0.2, gate_pos[0][2]],
+                [gate_pos[0][0]-0.3, gate_pos[0][1]+0.3, gate_pos[0][2]],
                 [gate_pos[2][0]+0.9, gate_pos[2][1]+0.3, gate_pos[2][2]-0.3],
                 [gate_pos[1][0]-0.5, gate_pos[1][1]+0.5, gate_pos[1][2]],
             ]
@@ -129,7 +127,7 @@ class StateController(Controller):
     def _get_obstacle_avoid_pos(self, obstacles_pos: NDArray[np.floating]) -> NDArray[np.floating]:
         return np.array(
             [
-                [obstacles_pos[0][0], obstacles_pos[0][1]-0.2, 0.6],
+                [obstacles_pos[0][0], obstacles_pos[0][1]-0.3, 0.6],
                 [obstacles_pos[1][0]+0.25, obstacles_pos[1][1]-0.3, 1],
                 [obstacles_pos[2][0]-0.2, obstacles_pos[2][1]+0.35, 1.1],
                 [obstacles_pos[3][0]+0.1 , obstacles_pos[3][1]+0.3, 1.15],
