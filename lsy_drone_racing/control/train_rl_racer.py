@@ -57,6 +57,8 @@ from scipy.interpolate import CubicHermiteSpline
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.control.rl_racer import (
+    GATE_BOX_HALF,
+    GATE_BOX_POS,
     G,
     action_to_command,
     mass_estimate_init,
@@ -80,20 +82,6 @@ CHECKPOINT_DIR = ROOT / "saves" / "rl_racer"
 
 # Collision geometry, from the gate, obstacle and cf21B_500 models
 DRONE_HALF = (0.07, 0.07, 0.02)
-GATE_BOX_POS = (
-    (0.0, 0.0, 0.28),
-    (0.0, 0.0, -0.28),
-    (0.0, -0.28, 0.0),
-    (0.0, 0.28, 0.0),
-    (0.0, 0.0, -0.86),
-)
-GATE_BOX_HALF = (
-    (0.01, 0.36, 0.08),
-    (0.01, 0.36, 0.08),
-    (0.01, 0.08, 0.36),
-    (0.01, 0.08, 0.36),
-    (0.05, 0.05, 0.5),
-)
 OBSTACLE_HALF = (0.015, 0.015, 0.815)
 OBSTACLE_CENTER_Z = -0.8  # Relative to the reported obstacle position at the top
 # Line through the nominal track: (kind, index, offset). Points were optimised for the MPCC racer.

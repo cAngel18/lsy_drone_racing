@@ -45,6 +45,21 @@ MASS_BOUNDS = (0.85, 1.15)  # bounds relative to the nominal mass
 MASS_MIN_HEIGHT = 0.08  # [m] no updates close to the ground
 MASS_THRUST_BOUNDS = (0.15, 0.85)  # no updates when the thrust is saturated, relative to its range
 THRUST_LAG = 0.55  # per step, first-order lag from the commanded to the realised thrust
+# Collision boxes of a gate in its own frame, from the gate model: frame bars and stand
+GATE_BOX_POS = (
+    (0.0, 0.0, 0.28),
+    (0.0, 0.0, -0.28),
+    (0.0, -0.28, 0.0),
+    (0.0, 0.28, 0.0),
+    (0.0, 0.0, -0.86),
+)
+GATE_BOX_HALF = (
+    (0.01, 0.36, 0.08),
+    (0.01, 0.36, 0.08),
+    (0.01, 0.08, 0.36),
+    (0.01, 0.08, 0.36),
+    (0.05, 0.05, 0.5),
+)
 
 
 def quat_to_matrix(xp: Any, q: Any) -> Any:
