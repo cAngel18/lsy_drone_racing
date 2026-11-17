@@ -36,6 +36,14 @@ reveals its true pose, and keeps the side on which it passes each object. MPPI i
 collisions against the poses as they are currently observed, so the path only has to pass the
 objects on a sensible side, and MPPI keeps the clearance.
 
+Status, through the evaluation script on new random level 3 tracks (120 runs): 93 % finished,
+mean lap 8.0 s, about 10 ms per control step on a laptop CPU. More reliable but slower: with
+``SPEED_MAX = 3.5``, ``ACC_LATERAL = 10`` and ``ACC_FORWARD = ACC_BRAKE = 8``, 96 % finish with a
+mean lap of 8.85 s (160 runs). The tracking lags the planned speed by up to a third, because the
+speed profile assumes that the acceleration can change instantly. A reference that runs ahead of
+the drone closes that gap but cuts corners: 0.1 s ahead gave 8.2 s at 83 %. It has only been flown
+in simulation, and roll and pitch are limited per axis, so diagonal tilts reach 1.4 rad.
+
 Requires ``control_mode = "attitude"``.
 """
 
@@ -65,12 +73,13 @@ HORIZON = 30  # Steps of the rollouts, at the environment frequency
 TEMPERATURE = 2.0  # lambda of the exponential weights, in units of the cost
 NOISE_STD = (0.15, 0.15, 0.06)  # Perturbations of roll, pitch [rad] and thrust [N]
 NOISE_SMOOTHING = 0.8  # Correlation of the perturbations between steps (0: white, 1: constant)
-MAX_TILT = 0.7  # [rad] limit of the roll and pitch commands
+MAX_TILT = 1.0  # [rad] limit of the roll and pitch commands
 # Speed along the planned path
-SPEED_MAX = 2.5  # [m/s] speed on straight parts of the path
-ACC_LATERAL = 6.0  # [m/s^2] lateral acceleration that sets the speed in curves
-ACC_FORWARD = 4.0  # [m/s^2] acceleration along the path
-ACC_BRAKE = 4.0  # [m/s^2] deceleration along the path
+SPEED_MAX = 4.0  # [m/s] speed on straight parts of the path
+ACC_LATERAL = 12.0  # [m/s^2] lateral acceleration that sets the speed in curves
+ACC_FORWARD = 10.0  # [m/s^2] acceleration along the path
+ACC_BRAKE = 10.0  # [m/s^2] deceleration along the path
+REFERENCE_LEAD = 0.0  # [s] the reference starts this far ahead of the drone on the planned schedule
 CURVATURE_CHORD = 4  # Samples to each side over which the curvature is measured
 CURVATURE_WINDOW = 4  # Samples before and after a curve that it slows down
 # Cost weights, per step of the horizon
@@ -107,11 +116,11 @@ GATE_BOX_HALF = np.array(
 # Path planning
 PATH_DS = 0.05  # [m] distance between the samples of the path
 TAKEOFF_HEIGHT = 0.3  # [m] rise before the path turns towards the first gate
-GATE_APPROACH = 0.5  # [m] the path enters a gate along its normal from this distance
-GATE_EXIT = 0.5  # [m] and leaves it along its normal for this distance
+GATE_APPROACH = 0.35  # [m] the path enters a gate along its normal from this distance
+GATE_EXIT = 0.35  # [m] and leaves it along its normal for this distance
 GATE_WALL = 0.55  # [m] half width of a gate as a wall for detours: frame, drone and a margin
 GATE_TOP = 0.55  # [m] height above the centre of a gate at which the path may cross it
-POLE_CLEARANCE = 0.4  # [m] distance of the path from poles: drone, margin and pole randomisation
+POLE_CLEARANCE = 0.3  # [m] distance of the path from poles, MPPI handles the pole randomisation
 GATE_CLEARANCE = 0.25  # [m] distance of the path from gate frames, outside of the gate passes
 ARENA_CLEARANCE = 0.25  # [m] distance of the path from the arena limits
 DETOUR_MARGIN = 0.1  # [m] detour points lie this far beyond the clearance of the object
@@ -710,7 +719,8 @@ class MPPIRacer(Controller):
         along = (pos - self.path[i]) @ tangent / (tangent @ tangent + 1e-9)
         progress = i + np.clip(along, 0.0, 1.0)
         index = np.arange(len(self.path), dtype=np.float64)
-        t = np.interp(progress, index, self._time) + self._dt * np.arange(1, HORIZON + 1)
+        t = np.interp(progress, index, self._time) + REFERENCE_LEAD
+        t = t + self._dt * np.arange(1, HORIZON + 1)
         s = np.interp(t, self._time, index)
         ref_pos = np.stack([np.interp(s, index, self.path[:, k]) for k in range(3)], axis=-1)
         lower = np.clip(np.floor(s).astype(int), 0, len(self.path) - 2)
