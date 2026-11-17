@@ -80,6 +80,43 @@ def test_attitude_controller(dynamics: Dynamics, controller: str):
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("config_file", ["level0.toml", "level3.toml"])
+def test_mppi_controller(config_file: str):
+    """Test if the MPPI controller finishes a fixed and a randomized (level 3) track."""
+    config = load_config(Path(__file__).parents[2] / "config" / config_file)
+    config.sim.render = False
+    config.env.control_mode = "attitude"
+    config.env.seed = 1337
+    ctrl_cls = load_controller(
+        Path(__file__).parents[2] / "lsy_drone_racing/control/mppi_controller.py"
+    )
+    env = gymnasium.make(
+        "DroneRacing-v0",
+        freq=config.env.freq,
+        sim_config=config.sim,
+        sensor_range=config.env.sensor_range,
+        control_mode="attitude",
+        track=config.env.track,
+        disturbances=config.env.get("disturbances"),
+        randomizations=config.env.get("randomizations"),
+        seed=config.env.seed,
+    )
+    env = JaxToNumpy(env)
+    obs, info = env.reset()
+    ctrl = ctrl_cls(obs, info, config)
+    while True:
+        action = ctrl.compute_control(obs, info).astype(np.float32)
+        obs, reward, terminated, truncated, info = env.step(action)
+        ctrl.step_callback(action, obs, reward, terminated, truncated, info)
+        if terminated or truncated:
+            break
+    env.close()
+    assert obs["n_gates_passed"] == obs["gate_sequence"].shape[0], (
+        "MPPI controller failed to complete the track"
+    )
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("yaw", [0, np.pi / 2, np.pi, 3 * np.pi / 2])
 @pytest.mark.parametrize("dynamics", [Dynamics.first_principles])
 def test_trajectory_controller_finish(yaw: float, dynamics: Dynamics):

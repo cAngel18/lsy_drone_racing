@@ -12,6 +12,8 @@ To give you an idea of what you need to do, we also include some example impleme
   A controller that follows a pre-defined trajectory using cubic spline interpolation.
 * [AttitudeController][lsy_drone_racing.control.attitude_controller.AttitudeController]: A
   controller that follows a pre-defined attitude using cubic spline interpolation.
+* [MPPIController][lsy_drone_racing.control.mppi_controller.MPPIController]: A sampling-based
+  Model Predictive Path Integral controller with online path planning for randomized tracks.
 """
 
 from lsy_drone_racing.control.controller import Controller
