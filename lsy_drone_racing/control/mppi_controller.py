@@ -13,9 +13,9 @@ Algorithm (one iteration per control step, Williams et al. 2017):
 2. **Roll out** every sequence with a model of the drone (the identified ``so_rpy`` model from
    crazyflow, which the simulator's attitude interface is fitted to). All rollouts run in parallel
    with ``jax.vmap`` and ``jax.lax.scan``.
-3. **Evaluate** each rollout with a cost function: tracking of a moving reference point on a path
-   through the gates, plus non-smooth penalties for collisions with gates, obstacles, and the arena
-   bounds. Sampling-based MPC handles such discontinuous costs naturally.
+3. **Evaluate** each rollout with a cost function: progress along a path through the gates, a
+   corridor around the path, and non-smooth penalties for collisions with gates, obstacles, and the
+   arena bounds. Sampling-based MPC handles such discontinuous costs naturally.
 4. **Weight** the samples with ``w_k = exp(-(S_k - min S) / lambda)`` (softmax with temperature
    ``lambda``) and update the nominal sequence with the weighted noise ``U <- U + sum_k w_k eps_k``.
 5. **Apply** the first control ``U[0]``, then **shift** ``U`` by one step to warm-start the next
@@ -23,9 +23,10 @@ Algorithm (one iteration per control step, Williams et al. 2017):
 
 Because the track is only known at runtime (and gate/obstacle positions change once they come into
 sensor range), a lightweight planner (grid search between the gates + cubic spline) builds a path
-through all remaining gates and re-plans whenever the observed track changes. MPPI tracks a
-reference point that moves along this path with a curvature-limited speed profile, and uses its
-collision costs as a safety layer.
+through all remaining gates and re-plans whenever the observed track changes. MPPI maximizes the
+progress along this path inside a corridor and below the planner's curvature-limited speed profile,
+so it chooses its own racing line (contouring-style). Its collision costs act as a safety layer.
+Setting ``progress_cost=False`` switches to tracking a reference point that moves along the path.
 
 A small disturbance observer estimates a constant acceleration offset (e.g. from the randomized
 mass) by comparing predicted and measured velocities, and feeds it back into the rollouts.
@@ -33,7 +34,8 @@ mass) by comparing predicted and measured velocities, and feeds it back into the
 Visualization (``render=True`` in the config or ``--render True``):
 
 * green line: planned path through the gates,
-* small blue spheres: reference points the horizon should track,
+* small blue spheres: the part of the path MPPI makes progress along (or the tracked reference
+  points with ``progress_cost=False``),
 * thin lines: a subset of the sampled rollouts, colored by their MPPI weight (green = high weight
   / low cost, red = low weight / high cost, purple = predicted collision),
 * thick yellow line: predicted trajectory of the updated (weighted mean) control sequence,
@@ -97,18 +99,29 @@ class MPPIConfig:
 
     # --- Sampling ---
     n_samples: int = 1024  # Number of sampled control sequences K
-    horizon: int = 30  # Prediction horizon H in control steps (H * dt seconds)
+    horizon: int = 40  # Prediction horizon H in control steps (H * dt seconds)
     dt: float = 0.02  # Control period [s], set from the environment frequency
     n_substeps: int = 2  # Integration substeps per control step
     temperature: float = 20.0  # MPPI temperature lambda. Low: greedy, high: average of all samples
     noise_sigma: tuple[float, float, float] = (
-        0.15,
-        0.15,
-        0.08,
+        0.2,
+        0.2,
+        0.1,
     )  # Std of roll, pitch [rad], thrust [N]
     noise_beta: float = 0.8  # Temporal correlation of the noise (0 = white noise, ->1 = constant)
     gamma: float = 0.05  # Weight of the information-theoretic control cost lambda * U^T S^-1 eps
-    max_tilt: float = 0.6  # Roll/pitch command limit [rad]
+    max_tilt: float = 0.9  # Roll/pitch command limit [rad]
+
+    # --- Cost formulation ---
+    # True: maximize progress along the path inside a corridor, MPPI picks its own racing line and
+    # speed (contouring-style). False: track a reference point that moves along the path.
+    progress_cost: bool = True
+    w_progress: float = 300.0  # Reward per meter of progress along the path within the horizon
+    w_contour: float = 2000.0  # Leaving the corridor around the path
+    w_center: float = 5.0  # Mild pull towards the center of the corridor
+    w_speed: float = 30.0  # Exceeding the speed profile of the planner (looks beyond the horizon)
+    corridor_width: float = 0.25  # Corridor half width away from gates and obstacles [m]
+    n_window: int = 96  # Number of path points MPPI sees for the progress cost
 
     # --- Cost weights ---
     w_pos: float = 80.0  # Tracking of the reference position
@@ -117,24 +130,24 @@ class MPPIConfig:
     w_term_vel: float = 10.0  # Terminal velocity error
     w_att: float = 1.0  # Roll and pitch angles (keeps the drone calm)
     w_du: tuple[float, float, float] = (5.0, 5.0, 50.0)  # Control rate (smoothness)
-    w_obs: float = 800.0  # Soft obstacle clearance cost
-    w_gate: float = 150.0  # Soft cost to stay away from gate frames
+    w_obs: float = 3000.0  # Soft obstacle clearance cost
+    w_gate: float = 600.0  # Soft cost to stay away from gate frames
     w_gate_center: float = 200.0  # Attraction to the center line of the target gate
     w_bounds: float = 500.0  # Soft arena bounds cost
     w_crash: float = 5000.0  # Cost per predicted step in collision (accumulates after a crash)
 
     # --- Geometry and safety margins ---
     r_drone: float = 0.08  # Collision radius of the drone [m]
-    r_obs_hit: float = 0.12  # Obstacle distance considered a collision [m]
+    r_obs_hit: float = 0.15  # Obstacle distance considered a collision [m]
     r_obs_safe: float = 0.22  # Obstacle distance below which the soft cost starts [m]
     gate_margin: float = 0.02  # Additional soft margin around gate frames [m]
     z_min: float = 0.1  # Soft lower bound [m]
 
     # --- Reference path and speed profile ---
-    v_max: float = 2.0  # Maximum reference speed [m/s]
+    v_max: float = 6.0  # Maximum reference speed [m/s]
     v_min: float = 0.4  # Minimum reference speed, so that the reference never gets stuck [m/s]
-    a_max: float = 4.0  # Acceleration limit of the reference [m/s^2]
-    a_lat: float = 4.0  # Lateral acceleration limit used for the speed profile [m/s^2]
+    a_max: float = 12.0  # Acceleration limit of the reference [m/s^2]
+    a_lat: float = 10.0  # Lateral acceleration limit used for the speed profile [m/s^2]
     d_pre: float = 0.35  # Distance of the approach waypoint in front of each gate [m]
     d_post: float = 0.35  # Distance of the exit waypoint behind each gate [m]
     gate_axis_clearance: float = 0.3  # Preferred obstacle clearance of gate approach/exit segments
@@ -144,8 +157,8 @@ class MPPIConfig:
     grid_res: float = 0.05  # Resolution of the planning grid [m]
     grid_r_soft: float = 0.5  # Distance below which the planner prefers to stay away [m]
     grid_w_clear: float = 4.0  # Weight of the clearance cost in the grid search
-    v_unseen_gate: float = 1.5  # Speed limit in front of gates that have not been observed [m/s]
-    unseen_gate_window: float = 0.8  # Length of the speed limited section before such gates [m]
+    v_unseen_gate: float = 2.5  # Speed limit in front of gates that have not been observed [m/s]
+    unseen_gate_window: float = 0.5  # Length of the speed limited section before such gates [m]
 
     # --- Disturbance observer ---
     dist_alpha: tuple[float, float, float] = (0.02, 0.02, 0.05)  # Filter gains (x, y, z)
@@ -209,6 +222,20 @@ class TrackArrays(NamedTuple):
     target_gate: jax.Array  # () index of the gate that has to be passed next
     pos_low: jax.Array  # (3,) soft arena bounds
     pos_high: jax.Array  # (3,)
+
+
+class PathWindow(NamedTuple):
+    """The part of the planned path ahead of the drone, used by the progress cost (a JAX pytree).
+
+    The points are equally spaced in arc length, starting slightly behind the drone.
+    """
+
+    pos: jax.Array  # (M, 3) path points
+    tangent: jax.Array  # (M, 3) unit tangents
+    s: jax.Array  # (M,) arc length relative to the drone's current progress
+    width: jax.Array  # (M,) corridor half width
+    v_max: jax.Array  # (M,) speed limit from the planner's speed profile
+    idx0: jax.Array  # () index of the point closest to the drone
 
 
 class MPPIInfo(NamedTuple):
@@ -309,6 +336,7 @@ def trajectory_cost(
     u_prev: jax.Array,
     ref_pos: jax.Array,
     ref_vel: jax.Array,
+    window: PathWindow,
     track: TrackArrays,
     cfg: MPPIConfig,
 ) -> tuple[jax.Array, jax.Array]:
@@ -318,8 +346,9 @@ def trajectory_cost(
         xs: Predicted states (H, 12).
         us: Applied controls (H, 3).
         u_prev: Control applied in the previous step (3,), used for the smoothness cost.
-        ref_pos: Reference positions (H, 3).
-        ref_vel: Reference velocities (H, 3).
+        ref_pos: Reference positions (H, 3), only used if ``cfg.progress_cost`` is False.
+        ref_vel: Reference velocities (H, 3), only used if ``cfg.progress_cost`` is False.
+        window: Path ahead of the drone, only used if ``cfg.progress_cost`` is True.
         track: Gates, obstacles and bounds.
         cfg: MPPI settings.
 
@@ -329,9 +358,21 @@ def trajectory_cost(
     pos, vel, rpy = xs[:, 0:3], xs[:, 3:6], xs[:, 6:9]
     r = cfg.r_drone
 
-    # Tracking of the moving reference point on the path
-    c_track = cfg.w_pos * jnp.sum((pos - ref_pos) ** 2, axis=-1)
-    c_track += cfg.w_vel * jnp.sum((vel - ref_vel) ** 2, axis=-1)
+    if cfg.progress_cost:
+        # Reward progress along the path, stay inside the corridor, respect the speed profile
+        s, err, idx = project_on_window(pos, window)
+        c_track = cfg.w_contour * jnp.maximum(err - window.width[idx], 0.0) ** 2
+        c_track += cfg.w_center * err**2
+        c_track += (
+            cfg.w_speed * jnp.maximum(jnp.linalg.norm(vel, axis=-1) - window.v_max[idx], 0) ** 2
+        )
+        terminal = -cfg.w_progress * s[-1]
+    else:
+        # Tracking of the moving reference point on the path
+        c_track = cfg.w_pos * jnp.sum((pos - ref_pos) ** 2, axis=-1)
+        c_track += cfg.w_vel * jnp.sum((vel - ref_vel) ** 2, axis=-1)
+        terminal = cfg.w_term_pos * jnp.sum((pos[-1] - ref_pos[-1]) ** 2)
+        terminal += cfg.w_term_vel * jnp.sum((vel[-1] - ref_vel[-1]) ** 2)
 
     # Regularization: small attitude and smooth controls
     c_ctrl = cfg.w_att * jnp.sum(rpy[:, :2] ** 2, axis=-1)
@@ -383,9 +424,33 @@ def trajectory_cost(
     c_crash = cfg.w_crash * crashed
 
     stage = c_track + c_ctrl + c_obs + c_gate + c_bounds + c_crash
-    terminal = cfg.w_term_pos * jnp.sum((pos[-1] - ref_pos[-1]) ** 2)
-    terminal += cfg.w_term_vel * jnp.sum((vel[-1] - ref_vel[-1]) ** 2)
     return jnp.sum(stage) + terminal, crashed[-1] > 0
+
+
+def project_on_window(pos: jax.Array, window: PathWindow) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Project a predicted trajectory (H, 3) onto the path window.
+
+    The search for the closest path point only looks a few points around the previous step's
+    projection. This keeps the progress monotonic and prevents jumps to other parts of the path
+    that pass close by (e.g. when the same gate is passed twice).
+
+    Returns:
+        Progress ``s`` (H,), distance to the path (H,), and index of the closest path point (H,).
+    """
+    n_search = 10
+    n = window.pos.shape[0]
+
+    def step(i_prev: jax.Array, p: jax.Array) -> tuple[jax.Array, tuple]:
+        start = jnp.clip(i_prev - 2, 0, n - n_search)
+        pts = jax.lax.dynamic_slice(window.pos, (start, 0), (n_search, 3))
+        i = start + jnp.argmin(jnp.sum((pts - p) ** 2, axis=-1))
+        rel = p - window.pos[i]
+        along = jnp.dot(rel, window.tangent[i])
+        err = jnp.linalg.norm(rel - along * window.tangent[i])
+        return i, (window.s[i] + along, err, i)
+
+    _, (s, err, idx) = jax.lax.scan(step, window.idx0, pos)
+    return s, err, idx
 
 
 @partial(jax.jit, static_argnames=("cfg",))
@@ -396,6 +461,7 @@ def mppi_step(
     u_prev: jax.Array,
     ref_pos: jax.Array,
     ref_vel: jax.Array,
+    window: PathWindow,
     track: TrackArrays,
     params: ModelParams,
     dist_acc: jax.Array,
@@ -413,6 +479,7 @@ def mppi_step(
         u_prev: Previously applied control (3,).
         ref_pos: Reference positions for the horizon (H, 3).
         ref_vel: Reference velocities for the horizon (H, 3).
+        window: Path ahead of the drone for the progress cost.
         track: Track information for the cost function.
         params: Model parameters.
         dist_acc: Estimated disturbance acceleration (3,).
@@ -437,8 +504,8 @@ def mppi_step(
     )
 
     # 3) Evaluate the costs
-    cost, crashed = jax.vmap(trajectory_cost, in_axes=(0, 0, None, None, None, None, None))(
-        xs, us, u_prev, ref_pos, ref_vel, track, cfg
+    cost, crashed = jax.vmap(trajectory_cost, in_axes=(0, 0, None, None, None, None, None, None))(
+        xs, us, u_prev, ref_pos, ref_vel, window, track, cfg
     )
     sigma_inv = 1.0 / jnp.asarray(cfg.noise_sigma) ** 2
     cost += cfg.gamma * cfg.temperature * jnp.sum((U - u_hover) * sigma_inv * eps, axis=(1, 2))
@@ -999,6 +1066,7 @@ class MPPIController(Controller):
         self._last_x, self._last_u = None, None
         self._s = 0.0
         self._ref_pos = None
+        self._window: PathWindow | None = None
         self._info: MPPIInfo | None = None
         self._tick = 0
         self._n_passed = int(obs["n_gates_passed"])
@@ -1066,6 +1134,31 @@ class MPPIController(Controller):
             pos_high=jnp.asarray(self._pos_high),
         )
 
+    def _path_window(self) -> PathWindow:
+        """The part of the path ahead of the drone that MPPI sees in the progress cost.
+
+        The corridor narrows close to gates (the opening is small) and close to obstacles. The speed
+        limit comes from the planner's speed profile, which also knows about curves beyond the
+        horizon.
+        """
+        cfg = self.cfg
+        spacing = (cfg.v_max * cfg.horizon * cfg.dt + 0.8) / (cfg.n_window - 1)
+        n_back = int(round(0.3 / spacing))
+        s = self._s + (np.arange(cfg.n_window) - n_back) * spacing
+        pos = self._path.position(s)
+        d_gate = np.linalg.norm(pos[:, None] - self._gates_pos[None], axis=-1).min(axis=-1)
+        d_obs = np.linalg.norm(pos[:, None, :2] - self._obstacles_pos[None, :, :2], axis=-1)
+        width = np.minimum(d_gate - 0.15, d_obs.min(axis=-1) - cfg.r_obs_safe)
+        v_max = np.interp(np.clip(s, 0.0, self._path.length), self._path.s, self._path.speed)
+        return PathWindow(
+            pos=pos.astype(np.float32),
+            tangent=self._path.tangent(s).astype(np.float32),
+            s=(s - self._s).astype(np.float32),
+            width=np.clip(width, 0.05, cfg.corridor_width).astype(np.float32),
+            v_max=v_max.astype(np.float32),
+            idx0=np.int32(n_back),
+        )
+
     def _warmup(self, obs: dict[str, NDArray]):
         """Compile the jitted functions before the race starts (results are discarded)."""
         t0 = time.perf_counter()
@@ -1078,6 +1171,7 @@ class MPPIController(Controller):
             self._u_prev,
             ref,
             np.zeros_like(ref),
+            self._path_window(),
             self._track_arrays(0),
             self._params,
             self._dist_acc,
@@ -1120,6 +1214,7 @@ class MPPIController(Controller):
         v0 = max(float(np.dot(vel, self._path.tangent(np.array([self._s]))[0])), 0.0)
         ref_pos, ref_vel = self._path.reference(self._s, v0, cfg.horizon, cfg.dt, cfg.a_max)
         self._ref_pos = ref_pos
+        self._window = self._path_window()
 
         t0 = time.perf_counter()
         self._key, key = jax.random.split(self._key)
@@ -1130,6 +1225,7 @@ class MPPIController(Controller):
             self._u_prev,
             ref_pos.astype(np.float32),
             ref_vel.astype(np.float32),
+            self._window,
             self._track_arrays(int(self._gate_sequence[n_passed])),
             self._params,
             self._dist_acc,
@@ -1244,8 +1340,13 @@ class MPPIController(Controller):
                 x = float(np.clip(c / 10.0, 0.0, 1.0))
                 rgba = np.array([x, 1.0 - x, 0.0, 0.7])
             draw_line(sim, pts, rgba=rgba, start_size=1.0, end_size=1.0)
-        # Reference points and the resulting MPPI trajectory
-        draw_points(sim, self._ref_pos[::3], rgba=np.array([0.2, 0.4, 1.0, 0.9]), size=0.012)
+        # What MPPI is asked to do: the path window it makes progress along, or the reference
+        # points it tracks. Then the resulting MPPI trajectory.
+        if cfg.progress_cost:
+            pts = self._window.pos[self._window.idx0 :: 4].astype(np.float64)
+            draw_points(sim, pts, rgba=np.array([0.2, 0.4, 1.0, 0.9]), size=0.012)
+        else:
+            draw_points(sim, self._ref_pos[::3], rgba=np.array([0.2, 0.4, 1.0, 0.9]), size=0.012)
         draw_line(
             sim,
             info.opt_traj.astype(np.float64),
