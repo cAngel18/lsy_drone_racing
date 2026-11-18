@@ -56,6 +56,7 @@ nav:
       - control.attitude_controller: control/attitude_controller.md
       - control.attitude_mpc: control/attitude_mpc.md
       - control.mppi_controller: control/mppi_controller.md
+      - control.mppi_no_planner: control/mppi_no_planner.md
     - Environments:
       - envs/index.md
       - envs.drone_race: envs/drone_race.md

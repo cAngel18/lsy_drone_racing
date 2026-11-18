@@ -355,8 +355,7 @@ def trajectory_cost(
     Returns:
         The total cost and a flag whether the rollout collides.
     """
-    pos, vel, rpy = xs[:, 0:3], xs[:, 3:6], xs[:, 6:9]
-    r = cfg.r_drone
+    pos, vel = xs[:, 0:3], xs[:, 3:6]
 
     if cfg.progress_cost:
         # Reward progress along the path, stay inside the corridor, respect the speed profile
@@ -373,6 +372,35 @@ def trajectory_cost(
         c_track += cfg.w_vel * jnp.sum((vel - ref_vel) ** 2, axis=-1)
         terminal = cfg.w_term_pos * jnp.sum((pos[-1] - ref_pos[-1]) ** 2)
         terminal += cfg.w_term_vel * jnp.sum((vel[-1] - ref_vel[-1]) ** 2)
+
+    c_safety, crashed = safety_cost(xs, us, u_prev, track, track.target_gate, cfg)
+    return jnp.sum(c_track + c_safety) + terminal, crashed[-1] > 0
+
+
+def safety_cost(
+    xs: jax.Array,
+    us: jax.Array,
+    u_prev: jax.Array,
+    track: TrackArrays,
+    target_gate: jax.Array,
+    cfg: MPPIConfig,
+) -> tuple[jax.Array, jax.Array]:
+    """Collision, bounds and regularization costs of a single rollout, per time step.
+
+    Args:
+        xs: Predicted states (H, 12).
+        us: Applied controls (H, 3).
+        u_prev: Control applied in the previous step (3,), used for the smoothness cost.
+        track: Gates, obstacles and bounds.
+        target_gate: Index of the gate to pass next, either one index or one per time step (H,).
+        cfg: MPPI settings.
+
+    Returns:
+        The cost per time step (H,) and whether the rollout has crashed until that step (H,).
+    """
+    pos, rpy = xs[:, 0:3], xs[:, 6:9]
+    r = cfg.r_drone
+    target_gate = jnp.broadcast_to(target_gate, pos.shape[:1])
 
     # Regularization: small attitude and smooth controls
     c_ctrl = cfg.w_att * jnp.sum(rpy[:, :2] ** 2, axis=-1)
@@ -407,7 +435,7 @@ def trajectory_cost(
     hit_gate = jnp.any(frame_region(0.0), axis=-1)
     c_gate = cfg.w_gate * jnp.sum(frame_region(cfg.gate_margin), axis=-1)
     # Pull towards the center line of the target gate when close to its plane
-    qt = q[:, track.target_gate]  # (H, 3)
+    qt = q[jnp.arange(pos.shape[0]), target_gate]  # (H, 3)
     near_target = (jnp.abs(qt[:, 0]) < 0.3) & (jnp.abs(qt[:, 1]) < 0.5) & (jnp.abs(qt[:, 2]) < 0.5)
     c_gate += cfg.w_gate_center * near_target * (qt[:, 1] ** 2 + qt[:, 2] ** 2)
 
@@ -423,8 +451,7 @@ def trajectory_cost(
     crashed = jax.lax.cummax((hit_obs | hit_gate | hit_bounds).astype(jnp.float32))
     c_crash = cfg.w_crash * crashed
 
-    stage = c_track + c_ctrl + c_obs + c_gate + c_bounds + c_crash
-    return jnp.sum(stage) + terminal, crashed[-1] > 0
+    return c_ctrl + c_obs + c_gate + c_bounds + c_crash, crashed > 0
 
 
 def project_on_window(pos: jax.Array, window: PathWindow) -> tuple[jax.Array, jax.Array, jax.Array]:

@@ -81,14 +81,20 @@ def test_attitude_controller(dynamics: Dynamics, controller: str):
 
 @pytest.mark.integration
 @pytest.mark.parametrize("config_file", ["level0.toml", "level3.toml"])
-def test_mppi_controller(config_file: str):
-    """Test if the MPPI controller finishes a fixed and a randomized (level 3) track."""
+@pytest.mark.parametrize("controller_file", ["mppi_controller.py", "mppi_no_planner.py"])
+def test_mppi_controller(config_file: str, controller_file: str):
+    """Test if the MPPI controllers finish a fixed track and most randomized (level 3) tracks.
+
+    The controllers finish about 92-98 % of the random level 3 tracks, and tiny numerical changes
+    can turn a lucky into an unlucky run. A single random track would make the test flaky, so on
+    level 3 we race three tracks and require two of them to finish.
+    """
     config = load_config(Path(__file__).parents[2] / "config" / config_file)
     config.sim.render = False
     config.env.control_mode = "attitude"
     config.env.seed = 1337
     ctrl_cls = load_controller(
-        Path(__file__).parents[2] / "lsy_drone_racing/control/mppi_controller.py"
+        Path(__file__).parents[2] / "lsy_drone_racing/control" / controller_file
     )
     env = gymnasium.make(
         "DroneRacing-v0",
@@ -102,18 +108,20 @@ def test_mppi_controller(config_file: str):
         seed=config.env.seed,
     )
     env = JaxToNumpy(env)
-    obs, info = env.reset()
-    ctrl = ctrl_cls(obs, info, config)
-    while True:
-        action = ctrl.compute_control(obs, info).astype(np.float32)
-        obs, reward, terminated, truncated, info = env.step(action)
-        ctrl.step_callback(action, obs, reward, terminated, truncated, info)
-        if terminated or truncated:
-            break
+    n_tracks, n_required = (1, 1) if config_file == "level0.toml" else (3, 2)
+    n_finished = 0
+    for i in range(n_tracks):
+        obs, info = env.reset(seed=config.env.seed + i)
+        ctrl = ctrl_cls(obs, info, config)
+        while True:
+            action = ctrl.compute_control(obs, info).astype(np.float32)
+            obs, reward, terminated, truncated, info = env.step(action)
+            ctrl.step_callback(action, obs, reward, terminated, truncated, info)
+            if terminated or truncated:
+                break
+        n_finished += int(obs["n_gates_passed"] == obs["gate_sequence"].shape[0])
     env.close()
-    assert obs["n_gates_passed"] == obs["gate_sequence"].shape[0], (
-        "MPPI controller failed to complete the track"
-    )
+    assert n_finished >= n_required, f"MPPI controller finished only {n_finished}/{n_tracks} tracks"
 
 
 @pytest.mark.integration

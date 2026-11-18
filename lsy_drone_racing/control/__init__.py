@@ -14,6 +14,8 @@ To give you an idea of what you need to do, we also include some example impleme
   controller that follows a pre-defined attitude using cubic spline interpolation.
 * [MPPIController][lsy_drone_racing.control.mppi_controller.MPPIController]: A sampling-based
   Model Predictive Path Integral controller with online path planning for randomized tracks.
+* [MPPINoPlanner][lsy_drone_racing.control.mppi_no_planner.MPPINoPlanner]: The same MPPI
+  controller without a path planner, guided only by the gate geometry.
 """
 
 from lsy_drone_racing.control.controller import Controller

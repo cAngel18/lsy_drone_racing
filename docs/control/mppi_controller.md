@@ -158,7 +158,8 @@ step where it happens, which can exceed the 20 ms control period once in a while
 ## Ideas for improvement
 
 * Use the grid planner's distance-to-go as terminal cost instead of a fixed path, so MPPI is
-  not bound to a corridor at all.
+  not bound to a corridor at all. A version without any planner is
+  [control.mppi_no_planner](mppi_no_planner.md).
 * Adapt the sampling covariance online (e.g. CoVO-MPC) or reuse elite samples (iCEM).
 * Optimize the speed profile per track segment, or plan time-optimal point-mass trajectories.
 * Use more samples on a GPU, and measure the compute budget on the deployment laptop.
