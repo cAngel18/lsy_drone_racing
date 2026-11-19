@@ -22,13 +22,12 @@ from crazyflow.dynamics.utils.rotation import ang_vel2rpy_rates
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 
-from crazyflow.sim.visualize import draw_line
+from crazyflow.sim.visualize import draw_line, draw_points
 
 from lsy_drone_racing.control import Controller
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
-
 
 def create_acados_model(parameters: dict) -> AcadosModel:
     """Creates an acados model from the symbolic drone dynamics."""
@@ -128,16 +127,20 @@ def create_ocp_solver(
     # Set initial references. We will overwrite these later to track the trajectory
     ocp.cost.yref, ocp.cost.yref_e = np.zeros((ny,)), np.zeros((ny_e,))
 
+    #maximum tilt
+    max_tilt_degree = 90
+    max_tilt_rad = max_tilt_degree / 180 * 3.1416
+
     # Set State Constraints (rpy < 30°)
-    ocp.constraints.lbx = np.array([-0.5, -0.5, -0.5])
-    ocp.constraints.ubx = np.array([0.5, 0.5, 0.5])
+    ocp.constraints.lbx = np.array([-max_tilt_rad, -max_tilt_rad, -max_tilt_rad])
+    ocp.constraints.ubx = np.array([max_tilt_rad, max_tilt_rad, max_tilt_rad])
     ocp.constraints.idxbx = np.array([3, 4, 5])
 
     # Set Input Constraints (rpy < 30°)
     total_thrust_min = parameters["thrust_min"] * 4
     total_thrust_max = parameters["thrust_max"] * 4
-    ocp.constraints.lbu = np.array([-0.5, -0.5, -0.5, total_thrust_min])
-    ocp.constraints.ubu = np.array([0.5, 0.5, 0.5, total_thrust_max])
+    ocp.constraints.lbu = np.array([-max_tilt_rad, -max_tilt_rad, -max_tilt_rad, total_thrust_min])
+    ocp.constraints.ubu = np.array([max_tilt_rad, max_tilt_rad, max_tilt_rad, total_thrust_max])
     ocp.constraints.idxbu = np.array([0, 1, 2, 3])
 
     # We have to set x0 even though we will overwrite it later on.
@@ -148,6 +151,7 @@ def create_ocp_solver(
     ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
     ocp.solver_options.integrator_type = "ERK"
     ocp.solver_options.nlp_solver_type = "SQP"  # SQP, SQP_RTI
+    ocp.solver_options.globalization = "MERIT_BACKTRACKING" # performs line search
     ocp.solver_options.tol = 1e-6
 
     ocp.solver_options.qp_solver_cond_N = N
@@ -191,13 +195,14 @@ class AttitudeMPC(Controller):
             config: The configuration of the environment.
         """
         super().__init__(obs, info, config)
+        self._freq = config.env.freq
         self._N = 25
         self._dt = 1 / config.env.freq
         self._T_HORIZON = self._N * self._dt
 
         # Same waypoints as in the state controller. Determined by trial and error.
         start_pos = obs["pos"]
-        waypoints = np.array(
+        self._waypoints = np.array(
             [
                 start_pos,
                 [-1.0, 0.75, 0.4],
@@ -213,9 +218,9 @@ class AttitudeMPC(Controller):
                 [0.25, 1.25, 1.2],
             ]
         )
-        self._t_total = 10  # s
-        t = np.linspace(0, self._t_total, len(waypoints))
-        self._des_pos_spline = CubicSpline(t, waypoints)
+        self._t_total = 6.5  # s
+        t = np.linspace(0, self._t_total, len(self._waypoints))
+        self._des_pos_spline = CubicSpline(t, self._waypoints)
         self._des_vel_spline = self._des_pos_spline.derivative()
         self._waypoints_pos = self._des_pos_spline(
             np.linspace(0, self._t_total, int(config.env.freq * self._t_total))
@@ -316,6 +321,9 @@ class AttitudeMPC(Controller):
     
     def render_callback(self, sim: Sim):
         """Visualize the desired trajectory and the current setpoint."""
+        setpoint = self._des_pos_spline(self._tick / self._freq).reshape(1, -1)
+        draw_points(sim, setpoint, rgba=(1.0, 0.0, 0.0, 1.0), size=0.02)
+        draw_points(sim, self._waypoints, rgba=(0.0, 1.0, 0.0, 1.0), size=0.02)
         trajectory = self._des_pos_spline(np.linspace(0, self._t_total, 100))
         draw_line(sim, trajectory, rgba=(0.0, 1.0, 0.0, 1.0))
 
