@@ -85,31 +85,31 @@ def create_ocp_solver(
     # State weights
     Q = np.diag(
         [
-            200.0,  # pos
-            200.0,  # pos
-            400.0,  # pos
-            0.001,  # rpy
-            0.001,  # rpy
-            0.001,  # rpy
-            0.001,  # vel
-            0.001,  # vel
-            0.001,  # vel
-            0.001,  # drpy
-            0.001,  # drpy
-            0.001,  # drpy
+            1500.0,  # pos
+            1500.0,  # pos
+            1500.0,  # pos
+            0.05,  # rpy
+            0.05,  # rpy
+            0.05,  # rpy
+            5.0,  # vel
+            5.0,  # vel
+            5.0,  # vel
+            0.02,  # drpy
+            0.02,  # drpy
+            0.02,  # drpy
         ]
     )
     # Input weights (reference is upright orientation and hover thrust)
     R = np.diag(
         [
-            1.0,  # rpy
-            1.0,  # rpy
-            1.0,  # rpy
-            50.0,  # thrust
+            0.5,  # rpy
+            0.5,  # rpy
+            0.5,  # rpy
+            8.0,  # thrust
         ]
     )
 
-    Q_e = Q.copy()
+    Q_e = 3.0 * Q  # stronger terminal cost (tuned)
     ocp.cost.W = scipy.linalg.block_diag(Q, R)
     ocp.cost.W_e = Q_e
 
@@ -153,13 +153,13 @@ def create_ocp_solver(
     ocp.solver_options.integrator_type = "ERK"
     ocp.solver_options.nlp_solver_type = "SQP"  # SQP, SQP_RTI
     ocp.solver_options.globalization = "MERIT_BACKTRACKING" # performs line search
-    ocp.solver_options.tol = 1e-6
+    ocp.solver_options.tol = 1e-4
 
     ocp.solver_options.qp_solver_cond_N = N
     ocp.solver_options.qp_solver_warm_start = 1
 
     ocp.solver_options.qp_solver_iter_max = 20
-    ocp.solver_options.nlp_solver_max_iter = 50
+    ocp.solver_options.nlp_solver_max_iter = 15
 
     # set prediction horizon
     ocp.solver_options.tf = Tf
@@ -203,7 +203,7 @@ class AttitudeMPC(Controller):
 
         # Waypoints are generated from the observed gate and obstacle positions (path planner from
         # pathplanner_cs.py) and regenerated whenever these observations change.
-        self._t_total = 5.5  # s
+        self._t_total = 4.5  # s
         self._start_pos = np.array(obs["pos"])
         self._gates_pos = None
         self._obstacles_pos = None
@@ -283,6 +283,8 @@ class AttitudeMPC(Controller):
         status = self._acados_ocp_solver.solve()
         if status != 0:
             print(f"acados status {status} at tick {self._tick}")  # e.g. 2 = max iter, 4 = QP failure
+            # if status == 2:
+            #     self._acados_ocp_solver.print_statistics()
         u0 = self._acados_ocp_solver.get(0, "u")
 
         return u0
