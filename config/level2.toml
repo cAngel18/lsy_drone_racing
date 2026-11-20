@@ -4,7 +4,7 @@
 # | :-----------------: | :----------------------------: | :-------------------------: | :---------------: | :-------------------: |
 # | `level2.toml`       | *Yes*                          | *Yes*                       | *No*              | Learning, re-planning |
 [controller]
-file = "rl_racer.py" # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
+file = "attitude_mpc_improoved.py" # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
 
 [deploy]
 ### Settings only relevant for deployment
@@ -27,7 +27,7 @@ drone = "cf21B_500"                        # Model of the drone, i.e., cf2x_L250
 # "so_rpy": Simplified identified model.
 # "so_rpy_rotor": Simplified identified model with rotor dynamics.
 # "so_rpy_rotor_drag": Simplified identified model with rotor dynamics and drag.
-dynamics = "first_principles"
+dynamics = "so_rpy"
 drone = "cf21B_500"       # Model of the drone, i.e., cf2x_L250, cf2x_P250, cf2x_T500, cf21B_500. For this course, we use cf21B_500
 freq = 500                      # Simulation frequency, in Hz
 attitude_freq = 500             # Controller frequency, in Hz. This frequency is used to simulate the onboard controller, NOT for the environment's step function

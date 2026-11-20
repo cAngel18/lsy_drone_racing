@@ -27,6 +27,7 @@ from crazyflow.sim.visualize import draw_line, draw_points
 from lsy_drone_racing.control import Controller
 
 if TYPE_CHECKING:
+    from crazyflow import Sim
     from numpy.typing import NDArray
 
 def create_acados_model(parameters: dict) -> AcadosModel:
@@ -84,8 +85,8 @@ def create_ocp_solver(
     # State weights
     Q = np.diag(
         [
-            50.0,  # pos
-            50.0,  # pos
+            200.0,  # pos
+            200.0,  # pos
             400.0,  # pos
             0.001,  # rpy
             0.001,  # rpy
@@ -200,35 +201,13 @@ class AttitudeMPC(Controller):
         self._dt = 1 / config.env.freq
         self._T_HORIZON = self._N * self._dt
 
-        # Same waypoints as in the state controller. Determined by trial and error.
-        start_pos = obs["pos"]
-        self._waypoints = np.array(
-            [
-                start_pos,
-                [-1.0, 0.75, 0.4],
-                [0.3, 0.35, 0.7],
-                [1.3, -0.15, 0.9],
-                [0.85, 0.85, 1.2],
-                [-0.5, -0.05, 0.7],
-                [-1.2, -0.2, 0.8],
-                [-1.2, -0.2, 1.2],
-                [-0.0, -0.7, 1.2],
-                [1.2, -0.15, 1.2],
-                [1.05, 0.75, 1.2],
-                [0.25, 1.25, 1.2],
-            ]
-        )
-        self._t_total = 6.5  # s
-        t = np.linspace(0, self._t_total, len(self._waypoints))
-        self._des_pos_spline = CubicSpline(t, self._waypoints)
-        self._des_vel_spline = self._des_pos_spline.derivative()
-        self._waypoints_pos = self._des_pos_spline(
-            np.linspace(0, self._t_total, int(config.env.freq * self._t_total))
-        )
-        self._waypoints_vel = self._des_vel_spline(
-            np.linspace(0, self._t_total, int(config.env.freq * self._t_total))
-        )
-        self._waypoints_yaw = self._waypoints_pos[:, 0] * 0
+        # Waypoints are generated from the observed gate and obstacle positions (path planner from
+        # pathplanner_cs.py) and regenerated whenever these observations change.
+        self._t_total = 5.5  # s
+        self._start_pos = np.array(obs["pos"])
+        self._gates_pos = None
+        self._obstacles_pos = None
+        self._update_trajectory(obs["gates_pos"], obs["obstacles_pos"])
 
         self.drone_params = load_params(Dynamics.so_rpy, config.sim.drone)
         self._acados_ocp_solver, self._ocp = create_ocp_solver(
@@ -263,6 +242,9 @@ class AttitudeMPC(Controller):
         if self._tick >= self._tick_max:
             print("returns true")
             self._finished = True
+
+        # Replan if gate or obstacle positions changed (e.g. once they are within sensor range)
+        self._update_trajectory(obs["gates_pos"], obs["obstacles_pos"])
 
         # Setting initial state
         obs["rpy"] = R.from_quat(obs["quat"]).as_euler("xyz")
@@ -332,3 +314,79 @@ class AttitudeMPC(Controller):
         print(f"Max tilt angle: {np.rad2deg(self._max_tilt):.2f} deg")
         self._max_tilt = 0.0
         self._tick = 0
+
+    def _update_trajectory(
+        self, gates_pos: NDArray[np.floating], obstacles_pos: NDArray[np.floating]
+    ):
+        """(Re)compute the reference trajectory if gate or obstacle positions have changed."""
+        gates_pos, obstacles_pos = np.array(gates_pos), np.array(obstacles_pos)
+        if (
+            self._gates_pos is not None
+            and np.array_equal(gates_pos, self._gates_pos)
+            and np.array_equal(obstacles_pos, self._obstacles_pos)
+        ):
+            return
+        self._gates_pos, self._obstacles_pos = gates_pos, obstacles_pos
+
+        self._waypoints = self._get_waypoints(gates_pos, obstacles_pos)
+        # Time allocation proportional to segment length (constant average speed) instead of equal
+        # time per segment, which demands very high accelerations on long segments.
+        seg_len = np.linalg.norm(np.diff(self._waypoints, axis=0), axis=1)
+        t = self._t_total * np.concatenate(([0.0], np.cumsum(seg_len))) / seg_len.sum()
+        # Clamped: zero velocity at start and end. The default (not-a-knot) starts at ~5 m/s while
+        # the drone is still on the ground, which makes the MPC saturate and crash.
+        self._des_pos_spline = CubicSpline(t, self._waypoints, bc_type="clamped")
+        self._des_vel_spline = self._des_pos_spline.derivative()
+        t_samples = np.linspace(0, self._t_total, int(self._freq * self._t_total))
+        self._waypoints_pos = self._des_pos_spline(t_samples)
+        self._waypoints_vel = self._des_vel_spline(t_samples)
+        self._waypoints_yaw = np.zeros(len(t_samples))
+
+    def _get_support_points(self, gate_pos: NDArray[np.floating]) -> NDArray[np.floating]:
+        return np.array(
+            [
+                [gate_pos[1][0] - 0.4, gate_pos[1][1] + 0.1, gate_pos[1][2] - 0.2],
+                [gate_pos[0][0] - 0.3, gate_pos[0][1] + 0.3, gate_pos[0][2]],
+                [gate_pos[2][0] + 0.9, gate_pos[2][1] + 0.3, gate_pos[2][2] - 0.3],
+                [gate_pos[1][0] - 1.5, gate_pos[1][1] + 1.5, gate_pos[1][2]],
+            ]
+        )
+
+    def _get_obstacle_avoid_pos(self, obstacles_pos: NDArray[np.floating]) -> NDArray[np.floating]:
+        return np.array(
+            [
+                [obstacles_pos[0][0], obstacles_pos[0][1] - 0.3, 0.6],
+                [obstacles_pos[1][0] + 0.25, obstacles_pos[1][1] - 0.3, 1],
+                [obstacles_pos[2][0] - 0.2, obstacles_pos[2][1] + 0.35, 1.2],
+                [obstacles_pos[3][0] + 0.1, obstacles_pos[3][1] + 0.3, 1.2],
+                [obstacles_pos[1][0] + 0.25, obstacles_pos[1][1] - 0.3, 1.2],
+            ]
+        )
+
+    def _get_waypoints(
+        self, gate_pos: NDArray[np.floating], obstacle_pos: NDArray[np.floating]
+    ) -> NDArray[np.floating]:
+        gate_pos_copy = np.array(gate_pos)
+
+        obstacle_avoid_pos = self._get_obstacle_avoid_pos(obstacle_pos)
+        support_points = self._get_support_points(gate_pos)
+
+        return np.array(
+            [
+                self._start_pos,
+                obstacle_avoid_pos[0],
+                gate_pos_copy[0],  # Gate 0
+                obstacle_avoid_pos[1],
+                gate_pos_copy[1],  # Gate 1
+                support_points[0],
+                support_points[1],
+                support_points[2],
+                gate_pos_copy[2],  # Gate 2
+                obstacle_avoid_pos[2],
+                obstacle_avoid_pos[3],
+                gate_pos_copy[3],  # Gate 3
+                obstacle_avoid_pos[4],
+                gate_pos_copy[1],  # Gate 1
+                support_points[3],
+            ]
+        )
