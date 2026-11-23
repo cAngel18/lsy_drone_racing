@@ -43,7 +43,7 @@ BIAS_GAIN = 0.1  # Low-pass gain of the acceleration bias estimate
 BIAS_LIMIT = 3.0  # [m/s^2]
 
 
-class MPPIRacer(Controller):
+class MPPIController(Controller):
     """MPPI controller that commands collective thrust and attitude."""
 
     def __init__(self, obs: dict[str, NDArray[np.floating]], info: dict, config: dict):

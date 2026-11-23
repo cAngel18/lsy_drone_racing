@@ -194,8 +194,10 @@ class MPPI:
     def _control_cost(self, plan: jax.Array, noise: jax.Array) -> jax.Array:
         """Information-theoretic input cost gamma * sum_t u_t^T Sigma^-1 eps_t for every sample.
 
-        It comes from the KL term in the MPPI derivation and penalizes moving the plan away from
-        where it already is. gamma = 0 (the default) disables it, which is common in practice.
+        It comes from the KL term in the MPPI derivation, which compares the sampling distribution
+        N(U, Sigma) with the passive one N(0, Sigma). Samples whose noise points against the plan
+        get a lower cost, so the term pulls the plan toward zero input (for a drone: zero thrust!).
+        gamma = 0 (the default) disables it, which is common in practice.
         """
         if self.cfg.control_cost_weight == 0.0:
             return jnp.zeros(noise.shape[0])
