@@ -109,7 +109,7 @@ def hover_thrust(model: dict[str, jax.Array]) -> float:
     weight = model["mass"] * -model["gravity_vec"][2]
     return float((weight - model["acc_coef"]) / model["cmd_f_coef"])
 
-
+# TODO: hier das mit dem thrust nochmal verstehen, wieso nicht umrechnung wie in hover_thrust
 def input_bounds(model: dict[str, jax.Array], cfg: RacingConfig) -> tuple[tuple, tuple]:
     """Lower and upper bounds of the attitude command [roll, pitch, yaw, thrust]."""
     u_min = (-cfg.max_tilt, -cfg.max_tilt, -np.pi, float(model["thrust_min"]))
@@ -126,13 +126,15 @@ def obs_to_drone_state(obs: dict[str, NDArray[np.floating]]) -> jax.Array:
 
 
 def body_z_axis(rpy: jax.Array) -> jax.Array:
-    """Third column of R = Rz(yaw) Ry(pitch) Rx(roll), i.e. scipy's extrinsic "xyz" convention."""
+    """Direction of thrust in the world frame, 
+    matches R.from_euler("xyz", rpy).as_matrix()[:, 2],
+    used to be traced by jax.jit"""
     cr, sr = jnp.cos(rpy[0]), jnp.sin(rpy[0])
     cp, sp = jnp.cos(rpy[1]), jnp.sin(rpy[1])
     cy, sy = jnp.cos(rpy[2]), jnp.sin(rpy[2])
     return jnp.stack([cy * sp * cr + sy * sr, sy * sp * cr - cy * sr, cp * cr])
 
-
+# TODO: try to understand model
 def so_rpy_step(
     x: jax.Array, u: jax.Array, model: dict, acc_bias: jax.Array, dt: float
 ) -> jax.Array:
@@ -210,20 +212,22 @@ def n_passes(track: dict[str, jax.Array]) -> int:
 
 
 def gate_local(pos: jax.Array, k: jax.Array, track: dict) -> tuple[jax.Array, jax.Array]:
-    """Position in the frame of pass k: (signed distance along the passing direction, y-z)."""
+    """Position in the frame of pass k: 
+    returns (signed distance along the passing direction/perpendicular to the gate, 
+    y-z/parallel to the gate)."""
     k = jnp.minimum(k, n_passes(track) - 1)
     local = track["pass_rot"][k].T @ (pos - track["pass_pos"][k])
     return local[0] * track["pass_dir"][k], local[1:]
 
 
 def gates_local(pos: jax.Array, track: dict) -> jax.Array:
-    """Position in the frame of every gate, shape (n_gates, 3)."""
+    """Position in the frame of every gate, shape (n_gates, 3). Used for collision."""
     return jnp.einsum("gji,gj->gi", track["gates_rot"], pos - track["gates_pos"])  # R^T (p - c)
 
 
 # region Cost terms
 
-
+# TODO: revisit
 def distance_to_go(pos: jax.Array, k: jax.Array, track: dict, cfg: RacingConfig) -> jax.Array:
     """Remaining race distance when pass k is the next target.
 
@@ -245,7 +249,7 @@ def distance_to_go(pos: jax.Array, k: jax.Array, track: dict, cfg: RacingConfig)
     )
     return jnp.where(k >= n_passes(track), 0.0, to_gate + track["remaining"][kc])
 
-
+# TODO: revisit
 def gate_passed(pos_prev: jax.Array, pos: jax.Array, k: jax.Array, track: dict) -> jax.Array:
     """Whether the segment pos_prev -> pos passes through the opening of pass k correctly."""
     x0, yz0 = gate_local(pos_prev, k, track)
@@ -255,7 +259,7 @@ def gate_passed(pos_prev: jax.Array, pos: jax.Array, k: jax.Array, track: dict) 
     yz = yz0 + alpha * (yz1 - yz0)
     return crossed & jnp.all(jnp.abs(yz) < GATE_INNER) & (k < n_passes(track))
 
-
+# TODO: revisit
 def collision(pos: jax.Array, track: dict, cfg: RacingConfig) -> jax.Array:
     """Collision with any gate frame, gate stand, obstacle pole, or the safety limits."""
     r = cfg.drone_radius
@@ -278,7 +282,8 @@ def collision(pos: jax.Array, track: dict, cfg: RacingConfig) -> jax.Array:
 
 
 def safety_cost(pos: jax.Array, vel: jax.Array, track: dict, cfg: RacingConfig) -> jax.Array:
-    """Quadratic penalties for coming too close to poles, gate frames, the ground, or too fast."""
+    """Quadratic penalties for coming too close to poles, gate frames, 
+    the ground, or too fast. (soft penalties)"""
     obstacles = track["obstacles_pos"]
     d_pole = jnp.linalg.norm(pos[:2] - obstacles[:, :2], axis=-1)
     below_top = pos[2] < obstacles[:, 2] + cfg.obstacle_safe_dist
@@ -337,6 +342,6 @@ def running_cost(
     cost = cfg.w_progress * distance_to_go(pos, x.gate, params.track, cfg)
     cost += cfg.crash_cost * x.new_crash
     cost += safety_cost(pos, vel, params.track, cfg)
-    cost += cfg.w_tilt * (u[0] ** 2 + u[1] ** 2)
-    cost += jnp.sum(jnp.asarray(cfg.w_smooth) * x.du**2)
+    cost += cfg.w_tilt * (u[0] ** 2 + u[1] ** 2) # TODO: compare to the other cost, keep both?
+    cost += jnp.sum(jnp.asarray(cfg.w_smooth) * x.du**2) # TODO: compare to the other cost, keep both?
     return cost
