@@ -49,6 +49,7 @@ class MPPIController(Controller):
     def __init__(self, obs: dict[str, NDArray[np.floating]], info: dict, config: dict):
         """Set up the racing problem and the MPPI engine, and compile the MPPI step."""
         super().__init__(obs, info, config)
+        print(f"Hello from {__file__}")
         if config.env.control_mode != "attitude":
             raise ValueError('MPPIRacer needs `control_mode = "attitude"` in [env].')
 

@@ -9,15 +9,15 @@ file = "christians_mppi/mppi_controller.py" # Put your controller file name here
 [deploy]
 ### Settings only relevant for deployment
 # Whether to check if gate and obstacle positions observed by vicon are within the limits defined down below.
-check_race_track = true
+check_race_track = false
 # Whether to check if the drone start position is within the limits specified down below.
-check_drone_start_pos = true
+check_drone_start_pos = false
 # Lets you practice your controller without putting up gates & obstacles, assumes nominal positions given below.
 real_track_objects = true
 
 [[deploy.drones]]
-id = 10
-channel = 100
+id = 2
+channel = 80
 drone = "cf21B_500"                        # Model of the drone, i.e., cf2x_L250, cf2x_P250, cf2x_T500, cf21B_500. For this course, we use cf21B_500
 
 

@@ -1,0 +1,132 @@
+[controller]
+file = "christians_mppi/mppi_controller.py"
+
+[deploy]
+check_drone_start_pos = false
+check_race_track = false
+real_track_objects = true
+[[deploy.drones]]
+id = 2
+channel = 80
+drone = "cf21B_500"
+
+[env]
+control_mode = "attitude"
+freq = 50
+id = "DroneRacing-v0"
+seed = -1
+sensor_range = 0.7
+
+[sim]
+attitude_freq = 500
+camera = -1
+drone = "cf21B_500"
+dynamics = "first_principles"
+freq = 500
+render = true
+[[sim.cam_config]]
+distance = 5.0
+azimuth = 180.0
+elevation = -25.0
+lookat = [ 0.0, 0.0, 0.0,]
+
+[env.track]
+gate_order = [ 1, 2, 3, 4, 2,]
+randomize = false
+[[env.track.drones]]
+pos = [ -1.3915799856185913, 0.5327633023262024, 0.04796169325709343,]
+rpy = [ -0.06406241254162308, 0.007199694472835416, -0.016769780495624744,]
+vel = [ 0, 0, 0,]
+ang_vel = [ 0, 0, 0,]
+
+[[env.track.gates]]
+pos = [ 2.2195420265197754, -0.0011043337872251868, 0.6691043376922607,]
+rpy = [ 0.003906898579455252, -0.024055377950827905, 0.004704854420667724,]
+
+[[env.track.gates]]
+pos = [ 1.0138241052627563, 0.8053351640701294, 1.216457724571228,]
+rpy = [ 0.015560141136956862, 0.009928306395225128, 0.8126023609922222,]
+
+[[env.track.gates]]
+pos = [ -0.036821745336055756, -0.05764912813901901, 0.6634413003921509,]
+rpy = [ 0.02642709484620424, -0.06643775419767572, -0.06277481222039072,]
+
+[[env.track.gates]]
+pos = [ 1.1758077144622803, -1.0261775255203247, 1.2143514156341553,]
+rpy = [ 0.005362586523379287, -0.0316324156461949, -3.110558416111588,]
+
+[[env.track.obstacles]]
+pos = [ 0.0028368609491735697, 1.6623858213424683, 1.587895393371582,]
+
+[[env.track.obstacles]]
+pos = [ 1.684799313545227, -0.28832778334617615, 1.5774383544921875,]
+
+[[env.track.obstacles]]
+pos = [ -1.5344794988632202, -0.25072723627090454, 1.5435235500335693,]
+
+[[env.track.obstacles]]
+pos = [ 0.639299750328064, -0.9938791394233704, 1.5484108924865723,]
+
+[env.disturbances.action]
+fn = "normal"
+scale = 0.001
+
+[env.disturbances.dynamics]
+fn = "uniform"
+
+[env.randomizations.drone_inertia]
+fn = "uniform"
+
+[env.randomizations.drone_mass]
+fn = "uniform"
+
+[env.randomizations.drone_pos]
+fn = "uniform"
+
+[env.randomizations.drone_rpy]
+fn = "uniform"
+
+[env.randomizations.gate_pos]
+fn = "uniform"
+
+[env.randomizations.gate_rpy]
+fn = "uniform"
+
+[env.randomizations.obstacle_pos]
+fn = "uniform"
+
+[env.track.safety_limits]
+pos_limit_high = [ 2.5, 1.5, 2.0,]
+pos_limit_low = [ -2.5, -1.5, -0.001,]
+
+[env.disturbances.dynamics.kwargs]
+maxval = [ 0.1, 0.1, 0.1,]
+minval = [ -0.1, -0.1, -0.1,]
+
+[env.randomizations.drone_inertia.kwargs]
+maxval = [ 1e-6, 1e-6, 1e-6,]
+minval = [ -1e-6, -1e-6, -1e-6,]
+
+[env.randomizations.drone_mass.kwargs]
+maxval = 0.005
+minval = -0.005
+
+[env.randomizations.drone_pos.kwargs]
+maxval = [ 0.1, 0.1, 0.02,]
+minval = [ -0.1, -0.1, 0.0,]
+
+[env.randomizations.drone_rpy.kwargs]
+maxval = [ 0.1, 0.1, 0.1,]
+minval = [ -0.1, -0.1, -0.1,]
+
+[env.randomizations.gate_pos.kwargs]
+maxval = [ 0.15, 0.15, 0.1,]
+minval = [ -0.15, -0.15, -0.1,]
+
+[env.randomizations.gate_rpy.kwargs]
+maxval = [ 0.05, 0.1, 0.2,]
+minval = [ -0.05, -0.1, -0.2,]
+
+[env.randomizations.obstacle_pos.kwargs]
+maxval = [ 0.15, 0.15, 0.05,]
+minval = [ -0.15, -0.15, -0.05,]
