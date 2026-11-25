@@ -1,0 +1,58 @@
+xternal/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1125 13:29:50.699467  305353 cuda_executor.cc:1176] [0] Failed to allocate device memory of 4.03GiB (4326484480 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: ===
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+Traceback (most recent call last):
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/scripts/deploy.py", line 124, in <module>
+    fire.Fire(main)
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/fire/core.py", line 135, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/fire/core.py", line 468, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/fire/core.py", line 684, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/scripts/deploy.py", line 88, in main
+    controller = controller_cls(obs, info, config)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/lsy_drone_racing/control/christians_mppi/mppi_controller.py", line 57, in __init__
+    self.model = rp.load_model_params(config.sim.drone)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/lsy_drone_racing/control/christians_mppi/racing_problem.py", line 101, in load_model_params
+    model = {k: jnp.asarray(p[k], dtype=jnp.float32) for k in keys}
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/numpy/array_constructors.py", line 453, in asarray
+    return array(a, dtype=dtype, copy=bool(copy), order=order, device=device,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/numpy/array_constructors.py", line 338, in array
+    out_array: Array = lax._convert_element_type(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/lax/lax.py", line 1762, in _convert_element_type
+    return convert_element_type_p.bind(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/core.py", line 727, in bind
+    return self.bind_with_trace(prev_trace, args, avals, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/lax/lax.py", line 5345, in _convert_element_type_bind_with_trace
+    operand = core.Primitive.bind_with_trace(convert_element_type_p, trace, args,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/core.py", line 735, in bind_with_trace
+    return trace.process_primitive(self, args, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/core.py", line 1316, in process_primitive
+    return primitive.impl(*args, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ws26-christian-hendrik/Documents/lsy_drone_racing/.pixi/envs/deploy/lib/python3.12/site-packages/jax/_src/dispatch.py", line 88, in apply_primitive
+    outs = fun(*args)
+           ^^^^^^^^^^
+RuntimeError: Bad StatusOr access: RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+(lsy_drone_racing:deploy) ws26-christian-hendrik@tueilsy-st-14:~/Documents/lsy_drone_racing$ 
+
